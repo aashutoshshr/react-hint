@@ -2,194 +2,74 @@ export default ({Component, createElement}) =>
 	class ReactHint extends Component {
 		static defaultProps = {
 			attribute: 'data-rh',
-			autoPosition: false,
 			className: 'react-hint',
-			delay: 0,
-			events: false,
+			events: ['mouseover'],
 			onRenderContent: null,
 			persist: false,
-			position: 'top'
+			position: 'top',
 		}
 
 		state = {target: null}
-		_containerStyle = {position: 'relative'}
+		style = {position: 'relative'}
 
 		componentDidMount() {
-			this.toggleEvents(this.props, true)
+			this.props.events.map((event) =>
+				document.addEventListener(event, this.toggleHint))
+		}
+
+		shouldComponentUpdate(props, {target}) {
+			return target !== this.state.target
 		}
 
 		componentWillUnmount() {
-			this.toggleEvents(this.props, false)
-			clearTimeout(this._timeout)
+			this.props.events.map((event) =>
+				document.removeEventListener(event, this.toggleHint))
 		}
 
-		toggleEvents = ({events, events: {click, focus, hover}}, flag) => {
-			const action = flag ? 'addEventListener' : 'removeEventListener'
-			const hasEvents = events === true
-
-			;(click || hasEvents) && document[action]('click', this.toggleHint)
-			;(focus || hasEvents) && document[action]('focusin', this.toggleHint)
-			;(hover || hasEvents) && document[action]('mouseover', this.toggleHint)
-			;(click || hover || hasEvents) && document[action]('touchend', this.toggleHint)
-		}
-
-		toggleHint = ({target = null} = {}) => {
-			clearTimeout(this._timeout)
-			this._timeout = setTimeout(() => this.setState(() => ({
-				target: this.getHint(target)
-			})), this.props.delay)
-		}
+		getPostfixedClassName = (postfix) =>
+			this.props.className.split(/\s+/).map((className) =>
+				`${className}${postfix}`).join(' ')
 
 		getHint = (el) => {
 			const {attribute, persist} = this.props
-			const {target} = this.state
-
 			while (el) {
 				if (el === document) break
-				if (persist && el === this._hint) return target
+				if (persist && el === this.hint) return el
 				if (el.hasAttribute(attribute)) return el
-				el = el.parentNode
+				el = el.parent
 			} return null
 		}
 
-		shouldComponentUpdate(props, state) {
-			return !this.shallowEqual(state, this.state) ||
-				!this.shallowEqual(props, this.props)
+		getHintPosition = (target) => {
+			const {attribute, position} = this.props
+			target.getAttribute(`${attribute}-at`) || position
 		}
 
-		shallowEqual = (a, b) => {
-			const keys = Object.keys(a)
-			return keys.length === Object.keys(b).length &&
-				keys.reduce((result, key) => result &&
-					((typeof a[key] === 'function' &&
-						typeof b[key] === 'function') ||
-							a[key] === b[key]), true)
-		}
+		setContainerRef = (ref) => (this.container = ref)
+		setHintRef = (ref) => (this.container = ref)
 
-		componentDidUpdate() {
-			if (this.state.target) this.setState(this.getHintData)
-		}
-
-		getHintData = ({target}, {attribute, autoPosition, position}) => {
-			const content = target.getAttribute(attribute) || ''
-			let at = target.getAttribute(`${attribute}-at`) || position
-
-			const {
-				top: containerTop,
-				left: containerLeft
-			} = this._container.getBoundingClientRect()
-
-			const {
-				width: hintWidth,
-				height: hintHeight
-			} = this._hint.getBoundingClientRect()
-
-			const {
-				top: targetTop,
-				left: targetLeft,
-				width: targetWidth,
-				height: targetHeight
-			} = target.getBoundingClientRect()
-
-			if (autoPosition) {
-				const isHoriz = ['left', 'right'].includes(at)
-
-				const {
-					clientHeight,
-					clientWidth
-				} = document.documentElement
-
-				const directions = {
-					left: (isHoriz
-						? targetLeft - hintWidth
-						: targetLeft + (targetWidth - hintWidth >> 1)) > 0,
-					right: (isHoriz
-						? targetLeft + targetWidth + hintWidth
-						: targetLeft + (targetWidth + hintWidth >> 1)) < clientWidth,
-					bottom: (isHoriz
-						? targetTop + (targetHeight + hintHeight >> 1)
-						: targetTop + targetHeight + hintHeight) < clientHeight,
-					top: (isHoriz
-						? targetTop - (hintHeight >> 1)
-						: targetTop - hintHeight) > 0
-				}
-
-				switch (at) {
-					case 'left':
-						if (!directions.left) at = 'right'
-						if (!directions.top) at = 'bottom'
-						if (!directions.bottom) at = 'top'
-						break
-
-					case 'right':
-						if (!directions.right) at = 'left'
-						if (!directions.top) at = 'bottom'
-						if (!directions.bottom) at = 'top'
-						break
-
-					case 'bottom':
-						if (!directions.bottom) at = 'top'
-						if (!directions.left) at = 'right'
-						if (!directions.right) at = 'left'
-						break
-
-					case 'top':
-					default:
-						if (!directions.top) at = 'bottom'
-						if (!directions.left) at = 'right'
-						if (!directions.right) at = 'left'
-						break
-				}
-			}
-
-			let top, left
-			switch (at) {
-				case 'left':
-					top = targetHeight - hintHeight >> 1
-					left = -hintWidth
-					break
-
-				case 'right':
-					top = targetHeight - hintHeight >> 1
-					left = targetWidth
-					break
-
-				case 'bottom':
-					top = targetHeight
-					left = targetWidth - hintWidth >> 1
-					break
-
-				case 'top':
-				default:
-					top = -hintHeight
-					left = targetWidth - hintWidth >> 1
-			}
-
-			return {
-				content, at,
-				top: (top + targetTop - containerTop)|0,
-				left: (left + targetLeft - containerLeft)|0
-			}
-		}
+		toggleHint = ({target}) => this.setState(() => ({
+			target: this.getHint(target),
+		}))
 
 		render() {
-			const {className, onRenderContent} = this.props
-			const {target, content, at, top, left} = this.state
+			const {attribute, className, onRenderContent} = this.props
+			const {target} = this.state
 
-			return <div ref={(ref) => this._container = ref}
-				style={this._containerStyle}>
+			return <div ref={this.setContainerRef}
+				style={this.style}>
 					{target &&
-						<div className={`${className} ${className}--${at}`}
-							ref={(ref) => this._hint = ref}
-							style={{top, left}}>
+						<div className={`${className} ${this.getClassName(`--${
+							this.getHintPosition(target)
+						}`)}`} ref={this.setHintRef}>
 								{onRenderContent
-									? onRenderContent(target, content)
-									: <div className={`${className}__content`}>
-										{content}
+									? onRenderContent(target)
+									: <div className={this.getClassName('__content')}>
+										{target.getAttribute(attribute)}
 									</div>
 								}
 						</div>
 					}
-				</div>
+			</div>
 		}
 	}
